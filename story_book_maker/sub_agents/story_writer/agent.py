@@ -1,7 +1,9 @@
 from google.adk.agents import Agent
 from pydantic import BaseModel, Field
 
+from ...callbacks import show_story_writer_progress
 from ...constants import STORY_WRITER_RESULT_KEY
+from .progress_agent import make_story_writer_progress_message_agent
 
 
 class ChildFairyTalePage(BaseModel):
@@ -50,7 +52,7 @@ Stay consistent with characters and setting unless the story logic requires a ch
 
 MODEL = "openai/gpt-4o"
 
-story_writer_agent = Agent(
+_story_writer_agent = Agent(
     name="story_writer_agent",
     description=(
         "Given a theme, writes a five-page children's fairy tale as structured data: "
@@ -61,4 +63,7 @@ story_writer_agent = Agent(
     model=MODEL,
     output_schema=ChildFairyTale,
     output_key=STORY_WRITER_RESULT_KEY,
+    before_agent_callback=show_story_writer_progress,
 )
+
+story_writer_agent = make_story_writer_progress_message_agent(_story_writer_agent)
