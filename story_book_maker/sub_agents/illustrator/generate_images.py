@@ -2,15 +2,39 @@ import base64
 
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
-from openai import OpenAI
+from openai import APIStatusError, OpenAI
 
 from ...constants import STORY_WRITER_RESULT_KEY
 
+MIN_PAGE = 1
+MAX_PAGE = 5
+
+# Nudges the image model away from policy edges; does not guarantee approval.
+_CHILD_BOOK_IMAGE_PREFIX = (
+    "Age-appropriate children's picture-book illustration. Wholesome, gentle, "
+    "non-violent, no sexual content. Scene to depict:\n"
+)
+
+
+def _openai_nested_error(exc: APIStatusError) -> tuple[str | None, str | None]:
+    """Parse ``code`` and ``type`` from OpenAI's ``{"error": {...}}`` body."""
+
+    body = exc.body
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            return err.get("code"), err.get("type")
+    return None, None
+
+
+def _page_number(page) -> int:
+    if isinstance(page, dict):
+        return int(page.get("page_number") or 0)
+    return int(getattr(page, "page_number", 0) or 0)
+
 
 def _page_sort_key(page):
-    if isinstance(page, dict):
-        return page.get("page_number", 0)
-    return getattr(page, "page_number", 0)
+    return _page_number(page)
 
 
 def _page_visual(page) -> str:
@@ -19,10 +43,18 @@ def _page_visual(page) -> str:
     return getattr(page, "visual", "") or ""
 
 
-def _visual_prompts_from_state(story_writer_result) -> list[str]:
-    """Build ordered image prompts from Story Writer output."""
+def _find_page_visual(story_writer_result, page_number: int) -> tuple[int, str]:
+    """Resolve the `visual` field for ``page_number`` from Story Writer output."""
+
+    if page_number < MIN_PAGE or page_number > MAX_PAGE:
+        raise ValueError(
+            f"`page_number` must be between {MIN_PAGE} and {MAX_PAGE}, got {page_number}."
+        )
+
     if story_writer_result is None:
-        return []
+        raise ValueError(
+            f"Missing `{STORY_WRITER_RESULT_KEY}` in state; cannot generate images."
+        )
 
     if isinstance(story_writer_result, dict):
         pages = story_writer_result.get("pages") or []
@@ -30,36 +62,34 @@ def _visual_prompts_from_state(story_writer_result) -> list[str]:
         pages = getattr(story_writer_result, "pages", None) or []
 
     ordered = sorted(pages, key=_page_sort_key)
-    return [_page_visual(p) for p in ordered]
+    for p in ordered:
+        if _page_number(p) == page_number:
+            visual = _page_visual(p)
+            if not str(visual).strip():
+                raise ValueError(
+                    f"`story_writer_result` page_number {page_number} has empty `visual`."
+                )
+            return page_number, visual
+
+    raise ValueError(
+        f"`story_writer_result` has no page with page_number={page_number}."
+    )
 
 
-async def generate_images(tool_context: ToolContext):
-    """Read fairy tale pages from session state and generate one image per page."""
+async def generate_image(page_number: int, tool_context: ToolContext):
+    """Read one page's brief from session state and generate a single JPEG artifact."""
 
     story_writer_result = tool_context.state.get(STORY_WRITER_RESULT_KEY)
-    optimized_prompts = _visual_prompts_from_state(story_writer_result)
+    pn, visual = _find_page_visual(story_writer_result, page_number)
 
-    if not optimized_prompts:
-        raise ValueError(
-            f"Missing or empty `{STORY_WRITER_RESULT_KEY}` in state; "
-            "cannot generate page images."
-        )
-
-    for i, prompt in enumerate(optimized_prompts):
-        if not str(prompt).strip():
-            raise ValueError(
-                f"`story_writer_result` page index {i} has empty `visual`."
-            )
+    filename = f"visual_{pn}.jpeg"
+    full_prompt = f"{_CHILD_BOOK_IMAGE_PREFIX}{str(visual).strip()}"
 
     client = OpenAI()
-    filenames: list[str] = []
-
-    for index, visual in enumerate(optimized_prompts, start=1):
-        filename = f"visual_{index}.jpeg"
-
+    try:
         image = client.images.generate(
             model="gpt-image-1",
-            prompt=visual,
+            prompt=full_prompt,
             n=1,
             quality="low",
             moderation="low",
@@ -67,25 +97,39 @@ async def generate_images(tool_context: ToolContext):
             background="opaque",
             size="1024x1536",
         )
-
-        image_bytes = base64.b64decode(image.data[0].b64_json)
-
-        artifact = types.Part(
-            inline_data=types.Blob(
-                mime_type="image/jpeg",
-                data=image_bytes,
-            )
+    except APIStatusError as exc:
+        code, err_type = _openai_nested_error(exc)
+        print(
+            f"OpenAI image generation failed for page {pn}: "
+            f"code={code!r} type={err_type!r} message={exc.message!r}"
         )
+        return {
+            "page_number": pn,
+            "filename": None,
+            "success": False,
+            "error_code": code or "openai_api_error",
+            "error_type": err_type,
+            "message": exc.message,
+        }
 
-        await tool_context.save_artifact(
-            filename=filename,
-            artifact=artifact,
+    image_bytes = base64.b64decode(image.data[0].b64_json)
+
+    artifact = types.Part(
+        inline_data=types.Blob(
+            mime_type="image/jpeg",
+            data=image_bytes,
         )
+    )
 
-        filenames.append(filename)
-        print(f"Generated image {filename}")
+    await tool_context.save_artifact(
+        filename=filename,
+        artifact=artifact,
+    )
+
+    print(f"Generated image {filename}")
 
     return {
-        "image_count": len(filenames),
-        "filenames": filenames,
+        "page_number": pn,
+        "filename": filename,
+        "success": True,
     }
