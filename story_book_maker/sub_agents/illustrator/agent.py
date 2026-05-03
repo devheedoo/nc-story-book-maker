@@ -1,4 +1,5 @@
 from google.adk.agents import Agent
+from pydantic import BaseModel, Field
 
 from ...constants import (
     STORY_WRITER_RESULT_KEY,
@@ -7,6 +8,17 @@ from ...constants import (
 from .generate_images import generate_image
 
 MODEL = "openai/gpt-4o"
+
+
+class IllustrationResult(BaseModel):
+    """Machine-readable result for one generated illustration artifact."""
+
+    page_number: int = Field(ge=1, le=5)
+    filename: str | None = None
+    success: bool
+    error_code: str | None = None
+    error_type: str | None = None
+    message: str | None = None
 
 
 def _illustrator_instruction(page_number: int) -> str:
@@ -20,8 +32,9 @@ def _illustrator_instruction(page_number: int) -> str:
 1. Call the `generate_image` tool **once** with `page_number={page_number}`. It reads `story_writer_result` from state and uses that page's `visual` brief as the scene prompt.
 2. The generated image must include that page's exact `text` as readable story text in a clean caption area at the bottom of the image.
 3. Do not substitute your own prompts or rewrite the story text; the tool uses the writer's `visual` and `text` fields from state for that page.
-4. If the tool returns `"success": false` (for example `"error_code": "moderation_blocked"`), explain briefly that OpenAI declined that image request and omit any raw API request IDs unless the user needs support.
-5. If the tool raises because state is missing or invalid, summarize that error for the user."""
+4. After the tool returns, emit structured output that exactly reflects the tool result: `page_number`, `filename`, `success`, and optional error fields.
+5. Do not include markdown, image links, captions, or prose in the final response; downstream agents read this structured state.
+6. If the tool returns `"success": false` (for example `"error_code": "moderation_blocked"`), preserve those error fields in the structured output."""
 
 
 def make_illustrator_agent(page_number: int) -> Agent:
@@ -37,5 +50,6 @@ def make_illustrator_agent(page_number: int) -> Agent:
         instruction=_illustrator_instruction(page_number),
         tools=[generate_image],
         model=MODEL,
+        output_schema=IllustrationResult,
         output_key=illustrator_page_result_key(page_number),
     )

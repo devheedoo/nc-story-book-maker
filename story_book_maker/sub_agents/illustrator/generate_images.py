@@ -4,7 +4,7 @@ from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 from openai import APIStatusError, OpenAI
 
-from ...constants import STORY_WRITER_RESULT_KEY
+from ...constants import STORY_WRITER_RESULT_KEY, illustrator_page_result_key
 
 MIN_PAGE = 1
 MAX_PAGE = 5
@@ -122,7 +122,7 @@ async def generate_image(page_number: int, tool_context: ToolContext):
             f"OpenAI image generation failed for page {pn}: "
             f"code={code!r} type={err_type!r} message={exc.message!r}"
         )
-        return {
+        result = {
             "page_number": pn,
             "filename": None,
             "success": False,
@@ -130,6 +130,8 @@ async def generate_image(page_number: int, tool_context: ToolContext):
             "error_type": err_type,
             "message": exc.message,
         }
+        tool_context.state[illustrator_page_result_key(pn)] = result
+        return result
 
     image_bytes = base64.b64decode(image.data[0].b64_json)
 
@@ -147,8 +149,10 @@ async def generate_image(page_number: int, tool_context: ToolContext):
 
     print(f"Generated image {filename}")
 
-    return {
+    result = {
         "page_number": pn,
         "filename": filename,
         "success": True,
     }
+    tool_context.state[illustrator_page_result_key(pn)] = result
+    return result

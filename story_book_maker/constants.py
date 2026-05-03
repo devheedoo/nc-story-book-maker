@@ -2,6 +2,8 @@
 
 STORY_WRITER_RESULT_KEY = "story_writer_result"
 ILLUSTRATOR_RESULT_KEY = "illustrator_result"
+FINAL_STORY_BOOK_RESULT_KEY = "final_story_book_result"
+FINAL_STORY_BOOK_PDF_FILENAME = "story_book.pdf"
 ILLUSTRATION_PAGE_COUNT = 5
 
 PROGRESS_PHASE_KEY = "progress_phase"
