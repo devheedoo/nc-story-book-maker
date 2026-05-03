@@ -13,14 +13,15 @@ def _illustrator_instruction(page_number: int) -> str:
     return f"""You are the illustration step after the story writer.
 
 ## Role
-- Session state already holds the structured fairy tale under `story_writer_result` (five pages, each with `visual` scene briefs).
+- Session state already holds the structured fairy tale under `story_writer_result` (five pages, each with `text` story prose and `visual` scene briefs).
 - Your job is to generate exactly **one** illustration JPEG for **page {page_number}** only.
 
 ## What to do
-1. Call the `generate_image` tool **once** with `page_number={page_number}`. It reads `story_writer_result` from state and uses that page's `visual` brief as the image prompt.
-2. Do not substitute your own prompts; the tool uses the writer's `visual` field from state for that page.
-3. If the tool returns `"success": false` (for example `"error_code": "moderation_blocked"`), explain briefly that OpenAI declined that image request and omit any raw API request IDs unless the user needs support.
-4. If the tool raises because state is missing or invalid, summarize that error for the user."""
+1. Call the `generate_image` tool **once** with `page_number={page_number}`. It reads `story_writer_result` from state and uses that page's `visual` brief as the scene prompt.
+2. The generated image must include that page's exact `text` as readable story text in a clean caption area at the bottom of the image.
+3. Do not substitute your own prompts or rewrite the story text; the tool uses the writer's `visual` and `text` fields from state for that page.
+4. If the tool returns `"success": false` (for example `"error_code": "moderation_blocked"`), explain briefly that OpenAI declined that image request and omit any raw API request IDs unless the user needs support.
+5. If the tool raises because state is missing or invalid, summarize that error for the user."""
 
 
 def make_illustrator_agent(page_number: int) -> Agent:

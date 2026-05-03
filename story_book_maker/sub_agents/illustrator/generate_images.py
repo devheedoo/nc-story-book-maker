@@ -14,6 +14,11 @@ _CHILD_BOOK_IMAGE_PREFIX = (
     "Age-appropriate children's picture-book illustration. Wholesome, gentle, "
     "non-violent, no sexual content. Scene to depict:\n"
 )
+_STORY_TEXT_PROMPT = (
+    "\n\nAdd the following exact story text as readable text in a clean caption "
+    "area at the bottom of the image. Keep the text legible, warm, and integrated "
+    "with the children's book page layout:\n"
+)
 
 
 def _openai_nested_error(exc: APIStatusError) -> tuple[str | None, str | None]:
@@ -43,8 +48,14 @@ def _page_visual(page) -> str:
     return getattr(page, "visual", "") or ""
 
 
-def _find_page_visual(story_writer_result, page_number: int) -> tuple[int, str]:
-    """Resolve the `visual` field for ``page_number`` from Story Writer output."""
+def _page_text(page) -> str:
+    if isinstance(page, dict):
+        return page.get("text") or ""
+    return getattr(page, "text", "") or ""
+
+
+def _find_page_brief(story_writer_result, page_number: int) -> tuple[int, str, str]:
+    """Resolve the `visual` and `text` fields for ``page_number``."""
 
     if page_number < MIN_PAGE or page_number > MAX_PAGE:
         raise ValueError(
@@ -69,7 +80,12 @@ def _find_page_visual(story_writer_result, page_number: int) -> tuple[int, str]:
                 raise ValueError(
                     f"`story_writer_result` page_number {page_number} has empty `visual`."
                 )
-            return page_number, visual
+            text = _page_text(p)
+            if not str(text).strip():
+                raise ValueError(
+                    f"`story_writer_result` page_number {page_number} has empty `text`."
+                )
+            return page_number, visual, text
 
     raise ValueError(
         f"`story_writer_result` has no page with page_number={page_number}."
@@ -80,10 +96,13 @@ async def generate_image(page_number: int, tool_context: ToolContext):
     """Read one page's brief from session state and generate a single JPEG artifact."""
 
     story_writer_result = tool_context.state.get(STORY_WRITER_RESULT_KEY)
-    pn, visual = _find_page_visual(story_writer_result, page_number)
+    pn, visual, text = _find_page_brief(story_writer_result, page_number)
 
     filename = f"visual_{pn}.jpeg"
-    full_prompt = f"{_CHILD_BOOK_IMAGE_PREFIX}{str(visual).strip()}"
+    full_prompt = (
+        f"{_CHILD_BOOK_IMAGE_PREFIX}{str(visual).strip()}"
+        f"{_STORY_TEXT_PROMPT}{str(text).strip()}"
+    )
 
     client = OpenAI()
     try:

@@ -11,12 +11,12 @@ _ILLUSTRATOR_PREFIX = (
     f"You are the **Illustrator** agent. You run **after** the story writer.\n\n"
     "The story data below was read from **session state** under the key produced by the story writer "
     f"(`{STORY_WRITER_RESULT_KEY}`). It is a JSON object with a `pages` array; each item has "
-    "`page_number`, `text`, and `visual_description`.\n\n"
+    "`page_number`, `text`, and `visual`.\n\n"
     "## Your task\n"
     "1. Your structured output **must define exactly five images**—one illustration per page, for `page_number` 1 through 5. Do not return fewer than five or more than five image entries.\n"
-    "2. For **each** of those five entries, produce an **image_prompt** that an image-generation API can use to render that spread. Ground the scene in `visual_description`; you may use `text` only for extra context, not to paste the story into the prompt.\n"
+    "2. For **each** of those five entries, produce an **image_prompt** that an image-generation API can use to render that spread. Ground the scene in `visual`, and include the page's exact `text` as readable story text in a clean caption area at the bottom of the image.\n"
     "3. Write a **style_bible** so characters, palette, and art style stay consistent across all five prompts (children's book illustration, readable at a glance).\n"
-    "4. Use **negative_prompt** per page only when useful (e.g. no scary imagery, no overlaid text).\n\n"
+    "4. Use **negative_prompt** per page only when useful (e.g. no scary imagery, no unreadable or misspelled text).\n\n"
     "Do not invent new story beats; only illustrate what the state describes."
 )
 
